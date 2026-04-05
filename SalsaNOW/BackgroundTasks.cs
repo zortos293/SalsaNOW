@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -10,56 +11,109 @@ namespace SalsaNOW
 {
     internal static class BackgroundTasks
     {
-        // Polls for Easy Anti-Cheat processes and terminates them to prevent GFN session shutdowns
-        public static async Task StartEacWatcherAsync(CancellationToken token)
+ 
+
+        public static async Task CloseHandlesLaunchersHelper(CancellationToken token)
         {
-            var eacProcessNames = new[] { "EasyAntiCheat_EOS_Setup", "EasyAntiCheat_Setup", "EasyAntiCheat", "EasyAntiCheat_EOS" };
+            const string launcherPath = @"C:\Users\user\boosteroid-experience\LaunchersHelper.exe";
+            string processName = Path.GetFileNameWithoutExtension(launcherPath);
+            var processes = Process.GetProcessesByName(processName);
+
+            foreach (var process in processes)
+            {
+                IntPtr processHandle = IntPtr.Zero;
+
+                try
+                {
+                    processHandle = NativeMethods.OpenProcess(NativeMethods.ProcessQueryLimitedInformation, false, process.Id);
+                    if (processHandle == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    var pathBuilder = new StringBuilder(260);
+                    int pathLength = pathBuilder.Capacity;
+                    if (!NativeMethods.QueryFullProcessImageName(processHandle, 0, pathBuilder, ref pathLength))
+                    {
+                        continue;
+                    }
+
+                    string currentPath = pathBuilder.ToString();
+
+                    if (!string.Equals(currentPath, launcherPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    SalsaLogger.Info($"Closing LaunchersHelper process: {currentPath}");
+
+                    try
+                    {
+                        if (process.CloseMainWindow())
+                        {
+                            await Task.Run(() => process.WaitForExit(5000));
+                        }
+                    }
+                    catch { }
+
+                    if (process.HasExited)
+                    {
+                        SalsaLogger.Info("LaunchersHelper.exe closed successfully.");
+                    }
+                    else
+                    {
+                        SalsaLogger.Warn("LaunchersHelper.exe did not exit after the close request.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SalsaLogger.Error($"Failed to close LaunchersHelper.exe: {ex.Message}");
+                }
+                finally
+                {
+                    if (processHandle != IntPtr.Zero)
+                    {
+                        NativeMethods.CloseHandle(processHandle);
+                    }
+
+                    process.Dispose();
+                }
+            }
+        }
+
+
+        public static Task CleanlogsLauncherHelper(CancellationToken token)
+        {
+            const string logPath = @"C:\users\user\boosteroid-experience\logs\launchershelper.log";
+
+            if (token.IsCancellationRequested)
+            {
+                return Task.CompletedTask;
+            }
 
             try
             {
-                while (!token.IsCancellationRequested)
+                string logDirectory = Path.GetDirectoryName(logPath);
+                if (!string.IsNullOrEmpty(logDirectory) && !Directory.Exists(logDirectory))
                 {
-                    await Task.Delay(5000, token);
-                    
-                    bool eacTerminated = false;
-
-                    // Iterate by specific name instead of polling ALL Windows processes
-                    foreach (var processName in eacProcessNames)
-                    {
-                        var runningProcs = Process.GetProcessesByName(processName);
-
-                        if (runningProcs.Length == 0) break;
-
-                        foreach (var proc in runningProcs)
-                        {
-                            try 
-                            { 
-                                if (!proc.HasExited) 
-                                {
-                                    proc.Kill(); 
-                                    SalsaLogger.Warn($"Terminated blocked process: {proc.ProcessName}");
-                                    eacTerminated = true;
-                                }
-                            } 
-                            catch { }
-                            finally 
-                            { 
-                                proc.Dispose(); // Release OS handles immediately to prevent memory leaks in the loop
-                            }
-                        }
-                    }
-
-                    if (eacTerminated)
-                    {
-                        _ = Task.Run(() => MessageBox.Show("Easy Anti-Cheat processes have been terminated to prevent session issues. Anti-Cheat games don't work.", "SalsaNOW", MessageBoxButtons.OK, MessageBoxIcon.Information));
-
-                        eacTerminated = false;
-                    }
+                    Directory.CreateDirectory(logDirectory);
                 }
+
+                using (var stream = new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
+                {
+                }
+
+                SalsaLogger.Info("Cleared launchershelper.log.");
             }
-            catch (TaskCanceledException) { }
+            catch (Exception ex)
+            {
+                SalsaLogger.Error($"Failed to clear launchershelper.log: {ex.Message}");
+            }
+
+            return Task.CompletedTask;
         }
-        
+
+
         // Monitors Desktop and Start Menu shortcuts, syncing them to the persistent SalsaNOW directory
         public static async Task StartShortcutsSavingAsync(string globalDirectory, CancellationToken token)
         {
@@ -185,113 +239,6 @@ namespace SalsaNOW
             }
         }
 
-        // Continuously monitors and terminates the default GFN CustomExplorer shell
-        public static async Task StartTerminateGFNExplorerShellAsync(CancellationToken token)
-        {
-            try
-            {
-                while (!token.IsCancellationRequested)
-                {
-                    await Task.Delay(500, token);
-                    IntPtr windowPtr = NativeMethods.FindWindowByCaption(IntPtr.Zero, "CustomExplorer");
-                    if (windowPtr != IntPtr.Zero)
-                    {
-                        NativeMethods.SendMessage(windowPtr, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                        SalsaLogger.Info("CustomExplorer has been closed.");
-                    }
-                }
-            }
-            catch (TaskCanceledException) { }
-        }
-
-        public static Task StartBrickPreventionAsync(CancellationToken token)
-        {
-            string userData = @"C:\Program Files (x86)\Steam\userdata";
-            string blackListed = "\"LaunchOptions\"";
-
-            if (!Directory.Exists(userData))
-                return Task.CompletedTask;
-
-            var watcher = new FileSystemWatcher
-            {
-                Path = userData,
-                Filter = "localconfig.vdf",
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
-            };
-
-            FileSystemEventHandler handler = (s, e) => HandleFile(e.FullPath, blackListed);
-            RenamedEventHandler renameHandler = (s, e) => HandleFile(e.FullPath, blackListed);
-
-            watcher.Created += handler;
-            watcher.Changed += handler;
-            watcher.Renamed += renameHandler;
-
-            watcher.EnableRaisingEvents = true;
-
-            // Initial scan (important)
-            foreach (var file in Directory.EnumerateFiles(userData, "localconfig.vdf", SearchOption.AllDirectories))
-            {
-                HandleFile(file, blackListed);
-            }
-
-            // Keep alive until cancelled
-            return Task.Run(() =>
-            {
-                try
-                {
-                    token.WaitHandle.WaitOne();
-                }
-                finally
-                {
-                    watcher.EnableRaisingEvents = false;
-                    watcher.Dispose();
-                }
-            }, token);
-        }
-        private static void HandleFile(string path, string blackListed)
-        {
-            Task.Run(async () =>
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    try
-                    {
-                        if (!File.Exists(path))
-                            return;
-
-                        string content;
-                        using (var reader = new StreamReader(path))
-                        {
-                            content = await reader.ReadToEndAsync();
-                        }
-
-                        if (content.Contains(blackListed))
-                        {
-                            File.Delete(path);
-
-                            NativeMethods.ShowWindow(
-                                NativeMethods.GetConsoleWindow(),
-                                NativeMethods.SW_SHOW);
-
-                            SalsaLogger.Error("STEAM LAUNCH OPTIONS DETECTED. Session terminated.");
-
-                            foreach (var p in Process.GetProcessesByName("steam"))
-                                p.Kill();
-                        }
-
-                        return;
-                    }
-                    catch (IOException)
-                    {
-                        await Task.Delay(200);
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                        return;
-                    }
-                }
-            });
-        }
+    
     }
 }

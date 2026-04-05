@@ -17,7 +17,8 @@ namespace SalsaNOW
 
         static async Task Main(string[] args)
         {
-            Console.Title = "SalsaNOW V1.6.3 - by dpadGuy";
+            // ❤️❤️❤️❤️ SalsaNOW Boosteroid V1.0.0 - by Zortos based on Dpadguy's SalsaNOW ❤️❤️❤️❤️
+            Console.Title = "Steam"; // Hidden due to Detection
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -36,20 +37,23 @@ namespace SalsaNOW
             SalsaSettings.Load(globalDirectory);
 
             // Fire and forget non-blocking background services
-            _ = BackgroundTasks.StartShortcutsSavingAsync(globalDirectory, cts.Token);
-            _ = BackgroundTasks.StartTerminateGFNExplorerShellAsync(cts.Token);
-            _ = BackgroundTasks.StartEacWatcherAsync(cts.Token);
-            _ = BackgroundTasks.StartBrickPreventionAsync(cts.Token);
+            //_ = BackgroundTasks.StartShortcutsSavingAsync(globalDirectory, cts.Token);
+            //_ = BackgroundTasks.StartTerminateGFNExplorerShellAsync(cts.Token);
+            //_ = BackgroundTasks.StartEacWatcherAsync(cts.Token);
+            //_ = BackgroundTasks.StartBrickPreventionAsync(cts.Token);
+            _ = BackgroundTasks.CloseHandlesLaunchersHelper(cts.Token);
+            _ = BackgroundTasks.CleanlogsLauncherHelper(cts.Token);
+             
 
             // Execute deployment modules
             await AppInstaller.AppsInstallAsync(globalDirectory, customAppsJsonPath);
             await AppInstaller.DesktopInstallAsync(globalDirectory);
             await AppInstaller.AppsInstallSilentAsync(globalDirectory);
             
-            await SteamManager.ShutdownServerAsync(globalDirectory);
+            //await SteamManager.ShutdownServerAsync(globalDirectory);
             
             // Apply Nvidia optimizations if enabled
-            if (SalsaSettings.NvidiaRaytracing) NvidiaManager.EnableRTX();
+            //if (SalsaSettings.NvidiaRaytracing) NvidiaManager.EnableRTX();
 
             NativeMethods.ShowWindow(NativeMethods.GetConsoleWindow(), NativeMethods.SW_HIDE);
             
@@ -65,15 +69,15 @@ namespace SalsaNOW
         {
             try
             {
-                if (!Directory.Exists(@"C:\Asgard")) 
+                if (!File.Exists(@"C:\Users\user\boosteroid-experience\LaunchersHelper.exe")) 
                 { 
-                    Console.WriteLine("[!] Not a GeForce NOW environment. Exiting..."); 
+                    Console.WriteLine("[!] Not a Boosteroid environment. Exiting..."); 
                     await Task.Delay(5000); Environment.Exit(0); 
                 }
                 
                 using (var wc = new WebClient())
                 {
-                    var dir = JsonConvert.DeserializeObject<System.Collections.Generic.List<SavePath>>(await wc.DownloadStringTaskAsync("https://salsanowfiles.work/jsons/directory.json"))[0];
+                    var dir = JsonConvert.DeserializeObject<System.Collections.Generic.List<SavePath>>(await wc.DownloadStringTaskAsync("https://files.zortos.me/bdjson/directory.json"))[0];
                     globalDirectory = dir.directoryCreate;
                     Directory.CreateDirectory(globalDirectory);
                     

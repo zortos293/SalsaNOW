@@ -10,10 +10,12 @@ namespace SalsaNOW
         public const int WM_CLOSE = 0x0010;
         public const int SW_HIDE = 0;
         public const int SW_SHOW = 5;
-
+        public const uint ProcessQueryLimitedInformation = 0x1000;
         public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         // --- user32.dll ---
+
+
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
@@ -53,5 +55,15 @@ namespace SalsaNOW
 
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetConsoleWindow();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern bool QueryFullProcessImageName(IntPtr hProcess, int dwFlags, StringBuilder lpExeName, ref int lpdwSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CloseHandle(IntPtr hObject);
     }
 }
